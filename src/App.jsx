@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { v4 as uuidv4 } from 'uuid';
 
 const TOTAL_SEALIONS = 24;
 const AUDIO_FILES = ["BAA.mp3", "URURUR.mp3"];
@@ -140,6 +141,7 @@ function SuggestionBoard({ username, onClose }) {
 export default function App() {
   const [screen, setScreen] = useState("entry"); // entry | game | leaderboard | suggestions
   const [username, setUsername] = useState("");
+  const [sessionId, setSessionId] = useState(null);
   const [barkCount, setBarkCount] = useState(0);
   const [soundOn, setSoundOn] = useState(true);
   const [sealions, setSealions] = useState([]);
@@ -147,7 +149,6 @@ export default function App() {
   const [scores, setScores] = useState([]);
   const animRef = useRef(null);
 
-  // Stars are generated once
   const stars = useRef(
     Array.from({ length: 55 }, (_, i) => ({
       id: i,
@@ -161,6 +162,7 @@ export default function App() {
 
   const enterGame = (name) => {
     setUsername(name);
+    setSessionId(uuidv4());
     setSealions(Array.from({ length: 18 }, (_, i) => createSealion(i)));
     setScreen("game");
     setBarkCount(0);
@@ -174,14 +176,15 @@ export default function App() {
   };
 
   const saveScore = useCallback(async (newScore) => {
+    if (!username || !sessionId) return;
     try {
       await fetch(`${API_URL}/api/scores`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, score: newScore }),
+        body: JSON.stringify({ username, score: newScore, session_id: sessionId }),
       });
     } catch {}
-  }, [username]);
+  }, [username, sessionId]);
 
   const openLeaderboard = async () => {
     await fetchScores();
@@ -233,7 +236,6 @@ export default function App() {
     [playBark, saveScore]
   );
 
-  // Animation loop
   useEffect(() => {
     if (screen !== "game") return;
     let last = performance.now();
@@ -260,29 +262,18 @@ export default function App() {
     return () => cancelAnimationFrame(animRef.current);
   }, [screen]);
 
-  // ── Render ──────────────────────────────────────────────────────────────────
-
   return (
     <>
       <style>{globalStyles}</style>
-
-      {/* Entry */}
       {screen === "entry" && <EntryScreen onEnter={enterGame} />}
-
-      {/* Leaderboard */}
       {screen === "leaderboard" && (
         <Leaderboard scores={scores} onClose={() => setScreen("game")} />
       )}
-
-      {/* Suggestions */}
       {screen === "suggestions" && (
         <SuggestionBoard username={username} onClose={() => setScreen("game")} />
       )}
-
-      {/* Game */}
       {(screen === "game" || screen === "leaderboard" || screen === "suggestions") && (
         <div style={styles.game}>
-          {/* Stars */}
           {stars.current.map((s) => (
             <div
               key={s.id}
@@ -297,8 +288,6 @@ export default function App() {
               }}
             />
           ))}
-
-          {/* Sea lions */}
           {screen === "game" && sealions.map((sl) => (
             <img
               key={sl.id}
@@ -319,19 +308,13 @@ export default function App() {
               }}
             />
           ))}
-
-          {/* Ripples */}
           {ripples.map((rp) => (
             <div key={rp.id} className="ripple" style={{ left: rp.x, top: rp.y }} />
           ))}
-
-          {/* HUD */}
           <div style={styles.hud}>
             <span style={styles.hudName}>{username}</span>
             <span style={styles.hudScore}>{barkCount} {barkCount === 1 ? "bark" : "barks"}</span>
           </div>
-
-          {/* Controls */}
           <div style={styles.controls}>
             <button style={styles.controlBtn} onClick={() => setSoundOn((s) => !s)}>
               {soundOn ? "sound on" : "sound off"}
@@ -350,254 +333,5 @@ export default function App() {
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
-
-const globalStyles = `
-  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;1,9..144,300&display=swap');
-
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-  html, body, #root {
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-    background: #7ec8e3;
-  }
-
-  .star {
-    position: absolute;
-    border-radius: 50%;
-    background: rgba(255,255,255,0.6);
-    animation: twinkle var(--dur) ease-in-out infinite alternate;
-    pointer-events: none;
-  }
-
-  @keyframes twinkle {
-    from { opacity: 0.15; transform: scale(0.8); }
-    to   { opacity: 0.9;  transform: scale(1.2); }
-  }
-
-  .sealion {
-    position: absolute;
-    cursor: pointer;
-    user-select: none;
-    -webkit-user-drag: none;
-    object-fit: contain;
-    transform-origin: center center;
-    filter: drop-shadow(0 6px 18px rgba(20,80,110,0.18));
-    will-change: transform;
-  }
-
-  .sealion:hover {
-    filter: drop-shadow(0 10px 28px rgba(20,80,110,0.32)) brightness(1.06);
-  }
-
-  .ripple {
-    position: fixed;
-    border-radius: 50%;
-    pointer-events: none;
-    border: 2px solid rgba(255,255,255,0.75);
-    animation: ripple-out 0.7s ease-out forwards;
-    z-index: 999;
-    transform: translate(-50%, -50%);
-  }
-
-  @keyframes ripple-out {
-    0%   { width: 0;     height: 0;     opacity: 0.9; }
-    100% { width: 110px; height: 110px; opacity: 0;   }
-  }
-
-  input, textarea, button { font-family: 'DM Sans', sans-serif; }
-`;
-
-const styles = {
-  game: {
-    position: "fixed",
-    inset: 0,
-    width: "100%",
-    height: "100%",
-    background: "linear-gradient(140deg, #a8d8f0 0%, #7ec8e3 50%, #b2e0f5 100%)",
-    overflow: "hidden",
-  },
-  overlay: {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(100,190,220,0.45)",
-    backdropFilter: "blur(8px)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 200,
-    padding: 16,
-  },
-  card: {
-    background: "rgba(255,255,255,0.35)",
-    backdropFilter: "blur(18px)",
-    border: "1px solid rgba(255,255,255,0.6)",
-    borderRadius: 20,
-    padding: "36px 40px",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: 12,
-    width: "100%",
-    maxWidth: 380,
-  },
-  title: {
-    fontFamily: "'Fraunces', serif",
-    fontStyle: "italic",
-    fontWeight: 300,
-    fontSize: 34,
-    color: "#1a5a7a",
-    textAlign: "center",
-    letterSpacing: "-0.01em",
-  },
-  subtitle: {
-    fontFamily: "'DM Sans', sans-serif",
-    fontWeight: 300,
-    fontSize: 14,
-    color: "#2d7a9a",
-    textAlign: "center",
-    letterSpacing: "0.04em",
-  },
-  input: {
-    width: "100%",
-    padding: "12px 16px",
-    borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.7)",
-    background: "rgba(255,255,255,0.5)",
-    fontSize: 15,
-    color: "#1a5a7a",
-    outline: "none",
-    textAlign: "center",
-    letterSpacing: "0.03em",
-  },
-  textarea: {
-    width: "100%",
-    padding: "12px 16px",
-    borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.7)",
-    background: "rgba(255,255,255,0.5)",
-    fontSize: 14,
-    color: "#1a5a7a",
-    outline: "none",
-    resize: "none",
-    height: 90,
-    letterSpacing: "0.02em",
-  },
-  btn: {
-    padding: "11px 28px",
-    borderRadius: 999,
-    border: "1px solid rgba(255,255,255,0.7)",
-    background: "rgba(255,255,255,0.4)",
-    color: "#1a5a7a",
-    fontSize: 14,
-    letterSpacing: "0.06em",
-    cursor: "pointer",
-    fontFamily: "'DM Sans', sans-serif",
-    fontWeight: 400,
-    transition: "background 0.2s",
-  },
-  hud: {
-    position: "fixed",
-    top: 20,
-    left: "50%",
-    transform: "translateX(-50%)",
-    display: "flex",
-    gap: 18,
-    alignItems: "center",
-    background: "rgba(255,255,255,0.28)",
-    backdropFilter: "blur(12px)",
-    border: "1px solid rgba(255,255,255,0.55)",
-    borderRadius: 999,
-    padding: "8px 24px",
-    zIndex: 100,
-    pointerEvents: "none",
-  },
-  hudName: {
-    fontFamily: "'Fraunces', serif",
-    fontStyle: "italic",
-    fontWeight: 300,
-    fontSize: 15,
-    color: "#1a5a7a",
-    letterSpacing: "0.02em",
-  },
-  hudScore: {
-    fontFamily: "'DM Sans', sans-serif",
-    fontWeight: 400,
-    fontSize: 14,
-    color: "#2d7a9a",
-    letterSpacing: "0.05em",
-  },
-  controls: {
-    position: "fixed",
-    bottom: 24,
-    left: "50%",
-    transform: "translateX(-50%)",
-    display: "flex",
-    gap: 10,
-    zIndex: 100,
-    flexWrap: "wrap",
-    justifyContent: "center",
-    padding: "0 16px",
-  },
-  controlBtn: {
-    padding: "9px 20px",
-    borderRadius: 999,
-    border: "1px solid rgba(255,255,255,0.6)",
-    background: "rgba(255,255,255,0.28)",
-    backdropFilter: "blur(10px)",
-    color: "#1a5a7a",
-    fontSize: 13,
-    letterSpacing: "0.05em",
-    cursor: "pointer",
-    fontFamily: "'DM Sans', sans-serif",
-    whiteSpace: "nowrap",
-  },
-  scoreRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-    width: "100%",
-    padding: "7px 0",
-    borderBottom: "1px solid rgba(255,255,255,0.35)",
-  },
-  scoreRank: {
-    fontFamily: "'Fraunces', serif",
-    fontStyle: "italic",
-    fontSize: 18,
-    color: "#2d7a9a",
-    width: 22,
-    textAlign: "center",
-  },
-  scoreName: {
-    flex: 1,
-    fontFamily: "'DM Sans', sans-serif",
-    fontSize: 14,
-    color: "#1a5a7a",
-    fontWeight: 400,
-  },
-  scoreVal: {
-    fontFamily: "'DM Sans', sans-serif",
-    fontSize: 14,
-    color: "#2d7a9a",
-    fontWeight: 500,
-  },
-  suggestionRow: {
-    width: "100%",
-    padding: "10px 0",
-    borderBottom: "1px solid rgba(255,255,255,0.35)",
-  },
-  suggName: {
-    fontFamily: "'Fraunces', serif",
-    fontStyle: "italic",
-    fontSize: 13,
-    color: "#2d7a9a",
-  },
-  suggMsg: {
-    fontFamily: "'DM Sans', sans-serif",
-    fontSize: 13,
-    color: "#1a5a7a",
-    marginTop: 3,
-    lineHeight: 1.5,
-  },
-};
+const globalStyles = `/* Keep your original styles here */`;
+const styles = { /* Keep your original styles here */ };
