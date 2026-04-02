@@ -229,7 +229,6 @@ const handleClick = useCallback((id, e) => {
     );
   }, 350);
 }, [playBark, barkCount, username]);
-  );
 
   const openLeaderboard = async () => {
     await fetchScores();
