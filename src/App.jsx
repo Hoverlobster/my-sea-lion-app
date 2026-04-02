@@ -145,7 +145,6 @@ export default function App() {
   const [sealions, setSealions] = useState([]);
   const [ripples, setRipples] = useState([]);
   const [scores, setScores] = useState([]);
-  const [scoreSaved, setScoreSaved] = useState(false);
   const animRef = useRef(null);
 
   // Stars are generated once
@@ -165,7 +164,6 @@ export default function App() {
     setSealions(Array.from({ length: 18 }, (_, i) => createSealion(i)));
     setScreen("game");
     setBarkCount(0);
-    setScoreSaved(false);
   };
 
   const fetchScores = async () => {
@@ -175,26 +173,22 @@ export default function App() {
     } catch {}
   };
 
-  const saveScore = useCallback(async () => {
-    if (scoreSaved || barkCount === 0) return;
+  const saveScore = useCallback(async (newScore) => {
     try {
       await fetch(`${API_URL}/api/scores`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, score: barkCount }),
+        body: JSON.stringify({ username, score: newScore }),
       });
-      setScoreSaved(true);
     } catch {}
-  }, [scoreSaved, barkCount, username]);
+  }, [username]);
 
   const openLeaderboard = async () => {
-    await saveScore();
     await fetchScores();
     setScreen("leaderboard");
   };
 
-  const openSuggestions = async () => {
-    await saveScore();
+  const openSuggestions = () => {
     setScreen("suggestions");
   };
 
@@ -210,7 +204,11 @@ export default function App() {
     (id, e) => {
       e.stopPropagation();
       playBark();
-      setBarkCount((c) => c + 1);
+      setBarkCount((c) => {
+        const next = c + 1;
+        saveScore(next);
+        return next;
+      });
 
       const rect = e.currentTarget.getBoundingClientRect();
       const cx = rect.left + rect.width / 2;
@@ -232,7 +230,7 @@ export default function App() {
         );
       }, 350);
     },
-    [playBark]
+    [playBark, saveScore]
   );
 
   // Animation loop
