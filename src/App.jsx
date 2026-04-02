@@ -193,18 +193,42 @@ export default function App() {
     } catch {}
   };
 
-  const saveScore = useCallback(
-    async (newScore) => {
-      if (!username || !sessionId) return;
-      try {
-        await fetch(`${API_URL}/api/scores`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, score: newScore, session_id: sessionId }),
-        });
-      } catch {}
-    },
-    [username, sessionId]
+const saveScore = async (newScore) => {
+  await fetch(`${import.meta.env.VITE_API_URL}/api/scores`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, score: newScore })
+  });
+};
+
+const handleClick = useCallback((id, e) => {
+  e.stopPropagation();
+  playBark();
+
+  const newScore = barkCount + 1;
+  setBarkCount(newScore);
+  saveScore(newScore); // <-- live update to backend
+
+  const rect = e.currentTarget.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const rippleId = Date.now() + Math.random();
+  setRipples((r) => [...r, { id: rippleId, x: cx, y: cy }]);
+  setTimeout(() => setRipples((r) => r.filter((rp) => rp.id !== rippleId)), 700);
+
+  setSealions((prev) =>
+    prev.map((sl) =>
+      sl.id === id
+        ? { ...sl, bouncing: true, bounceScale: 1.3, vx: randomBetween(-0.025, 0.025), vy: randomBetween(-0.025, 0.025) }
+        : sl
+    )
+  );
+  setTimeout(() => {
+    setSealions((prev) =>
+      prev.map((sl) => (sl.id === id ? { ...sl, bouncing: false, bounceScale: 1 } : sl))
+    );
+  }, 350);
+}, [playBark, barkCount, username]);
   );
 
   const openLeaderboard = async () => {
