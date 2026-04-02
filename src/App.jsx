@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { v4 as uuidv4 } from "uuid";
 
 const TOTAL_SEALIONS = 24;
-const AUDIO_FILES = ["/BAA.mp3", "/URURUR.mp3"]; // moved to /public
+const AUDIO_FILES = ["/BAA.mp3", "/URURUR.mp3"];
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
 function randomBetween(a, b) {
@@ -70,7 +70,7 @@ function Leaderboard({ scores, onClose }) {
         <p style={{ ...styles.subtitle, marginBottom: 20 }}>top 10</p>
         {scores.length === 0 && <p style={styles.subtitle}>no scores yet</p>}
         {scores.map((s, i) => (
-          <div key={i} style={styles.scoreRow}>
+          <div key={s.id || i} style={styles.scoreRow}>
             <span style={styles.scoreRank}>{i + 1}</span>
             <span style={styles.scoreName}>{s.username}</span>
             <span style={styles.scoreVal}>{s.score}</span>
@@ -110,7 +110,9 @@ function SuggestionBoard({ username, onClose }) {
       );
       setSuggestions(updated);
       setText("");
-    } catch {}
+    } catch (err) {
+      console.error("Failed to submit suggestion:", err);
+    }
     setSending(false);
   };
 
@@ -140,7 +142,7 @@ function SuggestionBoard({ username, onClose }) {
         </button>
         <div style={{ marginTop: 20, width: "100%" }}>
           {suggestions.map((s, i) => (
-            <div key={i} style={styles.suggestionRow}>
+            <div key={s.id || i} style={styles.suggestionRow}>
               <span style={styles.suggName}>{s.username}</span>
               <p style={styles.suggMsg}>{s.message}</p>
             </div>
@@ -157,7 +159,7 @@ function SuggestionBoard({ username, onClose }) {
 // ── Main Game ──────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [screen, setScreen] = useState("entry"); // entry | game | leaderboard | suggestions
+  const [screen, setScreen] = useState("entry");
   const [username, setUsername] = useState("");
   const [sessionId, setSessionId] = useState(null);
   const [barkCount, setBarkCount] = useState(0);
@@ -181,7 +183,7 @@ export default function App() {
   const enterGame = (name) => {
     setUsername(name);
     setSessionId(uuidv4());
-    setSealions(Array.from({ length: 18 }, (_, i) => createSealion(i)));
+    setSealions(Array.from({ length: TOTAL_SEALIONS }, (_, i) => createSealion(i)));
     setScreen("game");
     setBarkCount(0);
   };
@@ -190,45 +192,65 @@ export default function App() {
     try {
       const data = await fetch(`${API_URL}/api/scores`).then((r) => r.json());
       setScores(data);
-    } catch {}
+    } catch (err) {
+      console.error("Failed to fetch scores:", err);
+    }
   };
 
-const saveScore = async (newScore) => {
-  await fetch(`${import.meta.env.VITE_API_URL}/api/scores`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, score: newScore })
-  });
-};
+  const saveScore = useCallback(async (newScore) => {
+    try {
+      await fetch(`${API_URL}/api/scores`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, score: newScore })
+      });
+    } catch (err) {
+      console.error("Failed to save score:", err);
+    }
+  }, [username]);
 
-const handleClick = useCallback((id, e) => {
-  e.stopPropagation();
-  playBark();
+  const playBark = useCallback(() => {
+    if (!soundOn) return;
+    const file = AUDIO_FILES[Math.floor(Math.random() * AUDIO_FILES.length)];
+    const audio = new Audio(file);
+    audio.volume = 0.8;
+    audio.play().catch(() => console.log("Audio play failed"));
+  }, [soundOn]);
 
-  const newScore = barkCount + 1;
-  setBarkCount(newScore);
-  saveScore(newScore); // <-- live update to backend
+  const handleClick = useCallback((id, e) => {
+    e.stopPropagation();
+    playBark();
+    
+    setBarkCount((c) => {
+      const next = c + 1;
+      saveScore(next);
+      return next;
+    });
 
-  const rect = e.currentTarget.getBoundingClientRect();
-  const cx = rect.left + rect.width / 2;
-  const cy = rect.top + rect.height / 2;
-  const rippleId = Date.now() + Math.random();
-  setRipples((r) => [...r, { id: rippleId, x: cx, y: cy }]);
-  setTimeout(() => setRipples((r) => r.filter((rp) => rp.id !== rippleId)), 700);
+    const rect = e.currentTarget.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const rippleId = Date.now() + Math.random();
+    setRipples((r) => [...r, { id: rippleId, x: cx, y: cy }]);
+    
+    setTimeout(() => {
+      setRipples((r) => r.filter((rp) => rp.id !== rippleId));
+    }, 700);
 
-  setSealions((prev) =>
-    prev.map((sl) =>
-      sl.id === id
-        ? { ...sl, bouncing: true, bounceScale: 1.3, vx: randomBetween(-0.025, 0.025), vy: randomBetween(-0.025, 0.025) }
-        : sl
-    )
-  );
-  setTimeout(() => {
     setSealions((prev) =>
-      prev.map((sl) => (sl.id === id ? { ...sl, bouncing: false, bounceScale: 1 } : sl))
+      prev.map((sl) =>
+        sl.id === id
+          ? { ...sl, bouncing: true, bounceScale: 1.3, vx: randomBetween(-0.025, 0.025), vy: randomBetween(-0.025, 0.025) }
+          : sl
+      )
     );
-  }, 350);
-}, [playBark, barkCount, username]);
+    
+    setTimeout(() => {
+      setSealions((prev) =>
+        prev.map((sl) => (sl.id === id ? { ...sl, bouncing: false, bounceScale: 1 } : sl))
+      );
+    }, 350);
+  }, [playBark, saveScore]);
 
   const openLeaderboard = async () => {
     await fetchScores();
@@ -238,47 +260,6 @@ const handleClick = useCallback((id, e) => {
   const openSuggestions = () => {
     setScreen("suggestions");
   };
-
-  const playBark = useCallback(() => {
-    if (!soundOn) return;
-    const file = AUDIO_FILES[Math.floor(Math.random() * AUDIO_FILES.length)];
-    const audio = new Audio(file);
-    audio.volume = 0.8;
-    audio.play().catch(() => {});
-  }, [soundOn]);
-
-  const handleClick = useCallback(
-    (id, e) => {
-      e.stopPropagation();
-      playBark();
-      setBarkCount((c) => {
-        const next = c + 1;
-        saveScore(next);
-        return next;
-      });
-
-      const rect = e.currentTarget.getBoundingClientRect();
-      const cx = rect.left + rect.width / 2;
-      const cy = rect.top + rect.height / 2;
-      const rippleId = Date.now() + Math.random();
-      setRipples((r) => [...r, { id: rippleId, x: cx, y: cy }]);
-      setTimeout(() => setRipples((r) => r.filter((rp) => rp.id !== rippleId)), 700);
-
-      setSealions((prev) =>
-        prev.map((sl) =>
-          sl.id === id
-            ? { ...sl, bouncing: true, bounceScale: 1.3, vx: randomBetween(-0.025, 0.025), vy: randomBetween(-0.025, 0.025) }
-            : sl
-        )
-      );
-      setTimeout(() => {
-        setSealions((prev) =>
-          prev.map((sl) => (sl.id === id ? { ...sl, bouncing: false, bounceScale: 1 } : sl))
-        );
-      }, 350);
-    },
-    [playBark, saveScore]
-  );
 
   useEffect(() => {
     if (screen !== "game") return;
@@ -336,7 +317,7 @@ const handleClick = useCallback((id, e) => {
             <img
               key={sl.id}
               className="sealion"
-              src={`/sealion${sl.imageIndex}.png`} // public folder
+              src={`/sealion${sl.imageIndex}.png`}
               alt="sea lion"
               draggable={false}
               onClick={(e) => handleClick(sl.id, e)}
@@ -379,5 +360,178 @@ const handleClick = useCallback((id, e) => {
 }
 
 // ── Styles ──────────────────────────────────────────────────────────────────
-const globalStyles = `/* Keep your original styles here */`;
-const styles = { /* Keep your original styles here */ };
+const globalStyles = `
+  * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+  body { overflow: hidden; font-family: system-ui, -apple-system, sans-serif; }
+  .star {
+    position: absolute;
+    background: white;
+    border-radius: 50%;
+    opacity: 0.7;
+    animation: twinkle var(--dur) infinite alternate;
+    pointer-events: none;
+  }
+  @keyframes twinkle {
+    0% { opacity: 0.2; transform: scale(1); }
+    100% { opacity: 1; transform: scale(1.2); }
+  }
+  .sealion {
+    position: absolute;
+    cursor: pointer;
+    will-change: transform;
+    filter: drop-shadow(0 8px 12px rgba(0,0,0,0.2));
+    transition: filter 0.1s ease;
+  }
+  .sealion:active { filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3)); }
+  .ripple {
+    position: fixed;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0) 70%);
+    transform: translate(-50%, -50%) scale(0);
+    animation: rippleAnim 0.7s ease-out forwards;
+    pointer-events: none;
+  }
+  @keyframes rippleAnim {
+    0% { transform: translate(-50%, -50%) scale(0); opacity: 0.8; }
+    100% { transform: translate(-50%, -50%) scale(4); opacity: 0; }
+  }
+`;
+
+const styles = {
+  overlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'linear-gradient(135deg, #0a0f2a 0%, #0a1a3a 100%)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+  },
+  card: {
+    background: 'rgba(15, 25, 45, 0.95)',
+    backdropFilter: 'blur(10px)',
+    borderRadius: 32,
+    padding: '32px 40px',
+    textAlign: 'center',
+    border: '1px solid rgba(255,215,0,0.3)',
+    boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
+  },
+  title: {
+    color: '#FFD966',
+    fontSize: 42,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    textShadow: '0 2px 4px rgba(0,0,0,0.3)',
+  },
+  subtitle: {
+    color: '#aaa',
+    fontSize: 14,
+    marginBottom: 24,
+  },
+  input: {
+    width: '100%',
+    padding: '12px 16px',
+    fontSize: 16,
+    borderRadius: 40,
+    border: '1px solid #FFD966',
+    background: 'rgba(0,0,0,0.5)',
+    color: 'white',
+    marginBottom: 16,
+    outline: 'none',
+  },
+  btn: {
+    background: '#FFD966',
+    color: '#1a2a3a',
+    border: 'none',
+    padding: '10px 24px',
+    borderRadius: 40,
+    fontSize: 16,
+    fontWeight: 'bold',
+    cursor: 'pointer',
+    transition: 'transform 0.1s ease',
+  },
+  game: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'linear-gradient(180deg, #0a1030 0%, #0a2040 100%)',
+    overflow: 'hidden',
+    cursor: 'crosshair',
+  },
+  hud: {
+    position: 'fixed',
+    top: 20,
+    left: 20,
+    right: 20,
+    display: 'flex',
+    justifyContent: 'space-between',
+    background: 'rgba(0,0,0,0.6)',
+    backdropFilter: 'blur(8px)',
+    padding: '12px 24px',
+    borderRadius: 60,
+    color: 'white',
+    fontFamily: 'monospace',
+    fontSize: 18,
+    fontWeight: 'bold',
+    zIndex: 100,
+    pointerEvents: 'none',
+  },
+  hudName: { color: '#FFD966' },
+  hudScore: { color: '#66FFD9' },
+  controls: {
+    position: 'fixed',
+    bottom: 20,
+    left: 20,
+    right: 20,
+    display: 'flex',
+    gap: 12,
+    justifyContent: 'center',
+    zIndex: 100,
+  },
+  controlBtn: {
+    background: 'rgba(0,0,0,0.7)',
+    backdropFilter: 'blur(8px)',
+    border: '1px solid #FFD966',
+    color: '#FFD966',
+    padding: '8px 20px',
+    borderRadius: 40,
+    fontSize: 14,
+    cursor: 'pointer',
+    transition: 'all 0.1s ease',
+  },
+  scoreRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    padding: '8px 12px',
+    borderBottom: '1px solid rgba(255,255,255,0.1)',
+    color: 'white',
+  },
+  scoreRank: { fontWeight: 'bold', color: '#FFD966', width: 40 },
+  scoreName: { flex: 1, textAlign: 'left' },
+  scoreVal: { fontWeight: 'bold', color: '#66FFD9' },
+  textarea: {
+    width: '100%',
+    padding: 12,
+    borderRadius: 16,
+    background: 'rgba(0,0,0,0.5)',
+    border: '1px solid #FFD966',
+    color: 'white',
+    fontSize: 14,
+    marginBottom: 12,
+    resize: 'vertical',
+  },
+  suggestionRow: {
+    padding: '12px',
+    borderBottom: '1px solid rgba(255,255,255,0.1)',
+    textAlign: 'left',
+  },
+  suggName: { color: '#FFD966', fontSize: 12, fontWeight: 'bold' },
+  suggMsg: { color: '#ddd', fontSize: 13, marginTop: 4 },
+};
