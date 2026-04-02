@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4 } from "uuid";
 
 const TOTAL_SEALIONS = 24;
-const AUDIO_FILES = ["BAA.mp3", "URURUR.mp3"];
+const AUDIO_FILES = ["/BAA.mp3", "/URURUR.mp3"]; // moved to /public
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
 
 function randomBetween(a, b) {
@@ -25,7 +25,7 @@ function createSealion(id) {
   };
 }
 
-// ── Screens ──────────────────────────────────────────────────────────────────
+// ── Screens ────────────────────────────────────────────────────────────────
 
 function EntryScreen({ onEnter }) {
   const [name, setName] = useState("");
@@ -40,7 +40,9 @@ function EntryScreen({ onEnter }) {
           value={name}
           maxLength={30}
           onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && name.trim() && onEnter(name.trim())}
+          onKeyDown={(e) =>
+            e.key === "Enter" && name.trim() && onEnter(name.trim())
+          }
           autoFocus
         />
         <button
@@ -58,8 +60,13 @@ function EntryScreen({ onEnter }) {
 function Leaderboard({ scores, onClose }) {
   return (
     <div style={styles.overlay} onClick={onClose}>
-      <div style={{ ...styles.card, minWidth: 320 }} onClick={(e) => e.stopPropagation()}>
-        <h2 style={{ ...styles.title, fontSize: 26, marginBottom: 6 }}>all-time barks</h2>
+      <div
+        style={{ ...styles.card, minWidth: 320 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 style={{ ...styles.title, fontSize: 26, marginBottom: 6 }}>
+          all-time barks
+        </h2>
         <p style={{ ...styles.subtitle, marginBottom: 20 }}>top 10</p>
         {scores.length === 0 && <p style={styles.subtitle}>no scores yet</p>}
         {scores.map((s, i) => (
@@ -69,7 +76,9 @@ function Leaderboard({ scores, onClose }) {
             <span style={styles.scoreVal}>{s.score}</span>
           </div>
         ))}
-        <button style={{ ...styles.btn, marginTop: 20 }} onClick={onClose}>close</button>
+        <button style={{ ...styles.btn, marginTop: 20 }} onClick={onClose}>
+          close
+        </button>
       </div>
     </div>
   );
@@ -96,7 +105,9 @@ function SuggestionBoard({ username, onClose }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, message: text.trim() }),
       });
-      const updated = await fetch(`${API_URL}/api/suggestions`).then((r) => r.json());
+      const updated = await fetch(`${API_URL}/api/suggestions`).then((r) =>
+        r.json()
+      );
       setSuggestions(updated);
       setText("");
     } catch {}
@@ -105,8 +116,13 @@ function SuggestionBoard({ username, onClose }) {
 
   return (
     <div style={styles.overlay} onClick={onClose}>
-      <div style={{ ...styles.card, minWidth: 340, maxHeight: "80vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
-        <h2 style={{ ...styles.title, fontSize: 26, marginBottom: 6 }}>suggestion board</h2>
+      <div
+        style={{ ...styles.card, minWidth: 340, maxHeight: "80vh", overflowY: "auto" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 style={{ ...styles.title, fontSize: 26, marginBottom: 6 }}>
+          suggestion board
+        </h2>
         <p style={{ ...styles.subtitle, marginBottom: 16 }}>say something</p>
         <textarea
           style={styles.textarea}
@@ -130,13 +146,15 @@ function SuggestionBoard({ username, onClose }) {
             </div>
           ))}
         </div>
-        <button style={{ ...styles.btn, marginTop: 12 }} onClick={onClose}>close</button>
+        <button style={{ ...styles.btn, marginTop: 12 }} onClick={onClose}>
+          close
+        </button>
       </div>
     </div>
   );
 }
 
-// ── Main Game ─────────────────────────────────────────────────────────────────
+// ── Main Game ──────────────────────────────────────────────────────────────
 
 export default function App() {
   const [screen, setScreen] = useState("entry"); // entry | game | leaderboard | suggestions
@@ -175,16 +193,19 @@ export default function App() {
     } catch {}
   };
 
-  const saveScore = useCallback(async (newScore) => {
-    if (!username || !sessionId) return;
-    try {
-      await fetch(`${API_URL}/api/scores`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, score: newScore, session_id: sessionId }),
-      });
-    } catch {}
-  }, [username, sessionId]);
+  const saveScore = useCallback(
+    async (newScore) => {
+      if (!username || !sessionId) return;
+      try {
+        await fetch(`${API_URL}/api/scores`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, score: newScore, session_id: sessionId }),
+        });
+      } catch {}
+    },
+    [username, sessionId]
+  );
 
   const openLeaderboard = async () => {
     await fetchScores();
@@ -292,7 +313,7 @@ export default function App() {
             <img
               key={sl.id}
               className="sealion"
-              src={`sealion${sl.imageIndex}.png`}
+              src={`/sealion${sl.imageIndex}.png`} // public folder
               alt="sea lion"
               draggable={false}
               onClick={(e) => handleClick(sl.id, e)}
@@ -313,7 +334,9 @@ export default function App() {
           ))}
           <div style={styles.hud}>
             <span style={styles.hudName}>{username}</span>
-            <span style={styles.hudScore}>{barkCount} {barkCount === 1 ? "bark" : "barks"}</span>
+            <span style={styles.hudScore}>
+              {barkCount} {barkCount === 1 ? "bark" : "barks"}
+            </span>
           </div>
           <div style={styles.controls}>
             <button style={styles.controlBtn} onClick={() => setSoundOn((s) => !s)}>
@@ -332,6 +355,6 @@ export default function App() {
   );
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
+// ── Styles ──────────────────────────────────────────────────────────────────
 const globalStyles = `/* Keep your original styles here */`;
 const styles = { /* Keep your original styles here */ };
