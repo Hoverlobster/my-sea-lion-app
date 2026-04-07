@@ -8,23 +8,37 @@ function randomBetween(a, b) {
   return a + Math.random() * (b - a);
 }
 
-function createSealion(id) {
-  return {
-    id,
+// Returns array of n unique image indices (1-based) shuffled — no duplicates
+function uniqueImageIndices(total, count) {
+  const pool = Array.from({ length: total }, (_, i) => i + 1);
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  // If count > total, cycle through shuffled pool
+  const result = [];
+  while (result.length < count) result.push(...pool);
+  return result.slice(0, count);
+}
+
+function createSealions(count) {
+  const images = uniqueImageIndices(TOTAL_SEALIONS, count);
+  return Array.from({ length: count }, (_, i) => ({
+    id: i,
     x: randomBetween(8, 92),
     y: randomBetween(8, 92),
     size: randomBetween(80, 155),
-    vx: randomBetween(-0.014, 0.014) || 0.007,
-    vy: randomBetween(-0.014, 0.014) || 0.007,
+    vx: (randomBetween(-0.014, 0.014) || 0.007),
+    vy: (randomBetween(-0.014, 0.014) || 0.007),
     rotation: randomBetween(0, 360),
     rotationSpeed: randomBetween(-0.12, 0.12),
-    imageIndex: Math.floor(Math.random() * TOTAL_SEALIONS) + 1,
+    imageIndex: images[i],
     bouncing: false,
     bounceScale: 1,
-  };
+  }));
 }
 
-// ── Screens ──────────────────────────────────────────────────────────────────
+// ── Screens ───────────────────────────────────────────────────────────────────
 
 function EntryScreen({ onEnter }) {
   const [name, setName] = useState("");
@@ -78,6 +92,7 @@ function SuggestionBoard({ username, onClose }) {
   const [suggestions, setSuggestions] = useState([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
     fetch(`${API_URL}/api/suggestions`)
@@ -87,24 +102,31 @@ function SuggestionBoard({ username, onClose }) {
   }, []);
 
   const submit = async () => {
-    if (!text.trim()) return;
+    if (!text.trim() || sending) return;
     setSending(true);
     try {
-      await fetch(`${API_URL}/api/suggestions`, {
+      const res = await fetch(`${API_URL}/api/suggestions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, message: text.trim() }),
       });
-      const updated = await fetch(`${API_URL}/api/suggestions`).then((r) => r.json());
-      setSuggestions(updated);
-      setText("");
+      if (res.ok) {
+        const updated = await fetch(`${API_URL}/api/suggestions`).then((r) => r.json());
+        setSuggestions(updated);
+        setText("");
+        setSubmitted(true);
+        setTimeout(() => setSubmitted(false), 2500);
+      }
     } catch {}
     setSending(false);
   };
 
   return (
     <div style={styles.overlay} onClick={onClose}>
-      <div style={{ ...styles.card, minWidth: 340, maxHeight: "80vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+      <div
+        style={{ ...styles.card, minWidth: 340, maxHeight: "80vh", overflowY: "auto" }}
+        onClick={(e) => e.stopPropagation()}
+      >
         <h2 style={{ ...styles.title, fontSize: 26, marginBottom: 6 }}>suggestion board</h2>
         <p style={{ ...styles.subtitle, marginBottom: 16 }}>say something</p>
         <textarea
@@ -114,6 +136,9 @@ function SuggestionBoard({ username, onClose }) {
           maxLength={300}
           onChange={(e) => setText(e.target.value)}
         />
+        {submitted && (
+          <p style={{ ...styles.subtitle, color: "#1a8a4a" }}>sent.</p>
+        )}
         <button
           style={{ ...styles.btn, opacity: text.trim() && !sending ? 1 : 0.4 }}
           disabled={!text.trim() || sending}
@@ -124,7 +149,7 @@ function SuggestionBoard({ username, onClose }) {
         <div style={{ marginTop: 20, width: "100%" }}>
           {suggestions.map((s, i) => (
             <div key={i} style={styles.suggestionRow}>
-              <span style={styles.suggName}>{s.username}</span>
+              <span style={styles.suggName}>{s.username || "anonymous"}</span>
               <p style={styles.suggMsg}>{s.message}</p>
             </div>
           ))}
@@ -138,16 +163,18 @@ function SuggestionBoard({ username, onClose }) {
 // ── Main Game ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [screen, setScreen] = useState("entry"); // entry | game | leaderboard | suggestions
+  const [screen, setScreen] = useState("entry");
   const [username, setUsername] = useState("");
   const [barkCount, setBarkCount] = useState(0);
+  const barkCountRef = useRef(0); // always current value for save-on-unload
   const [soundOn, setSoundOn] = useState(true);
   const [sealions, setSealions] = useState([]);
   const [ripples, setRipples] = useState([]);
   const [scores, setScores] = useState([]);
   const animRef = useRef(null);
+  const usernameRef = useRef("");
+  const scoreSavedRef = useRef(false);
 
-  // Stars are generated once
   const stars = useRef(
     Array.from({ length: 55 }, (_, i) => ({
       id: i,
@@ -159,38 +186,56 @@ export default function App() {
     }))
   );
 
+  // Keep refs in sync
+  useEffect(() => { barkCountRef.current = barkCount; }, [barkCount]);
+  useEffect(() => { usernameRef.current = username; }, [username]);
+
+  // Save score exactly once — on session end (leaderboard open or tab close)
+  const saveScore = useCallback(async (nameOverride, scoreOverride) => {
+    const name = nameOverride || usernameRef.current;
+    const score = scoreOverride ?? barkCountRef.current;
+    if (scoreSavedRef.current || !name || score === 0) return;
+    scoreSavedRef.current = true;
+    try {
+      await fetch(`${API_URL}/api/scores`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: name, score }),
+      });
+    } catch {}
+  }, []);
+
+  // Save on tab close / refresh
+  useEffect(() => {
+    const handle = () => saveScore();
+    window.addEventListener("beforeunload", handle);
+    return () => window.removeEventListener("beforeunload", handle);
+  }, [saveScore]);
+
   const enterGame = (name) => {
     setUsername(name);
-    setSealions(Array.from({ length: 18 }, (_, i) => createSealion(i)));
+    usernameRef.current = name;
+    scoreSavedRef.current = false;
+    setSealions(createSealions(18));
     setScreen("game");
     setBarkCount(0);
+    barkCountRef.current = 0;
   };
 
   const fetchScores = async () => {
     try {
       const data = await fetch(`${API_URL}/api/scores`).then((r) => r.json());
-      setScores(data);
+      setScores(Array.isArray(data) ? data : []);
     } catch {}
   };
 
-  const saveScore = useCallback(async (newScore) => {
-    try {
-      await fetch(`${API_URL}/api/scores`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, score: newScore }),
-      });
-    } catch {}
-  }, [username]);
-
   const openLeaderboard = async () => {
+    await saveScore(); // save current session score before showing board
     await fetchScores();
     setScreen("leaderboard");
   };
 
-  const openSuggestions = () => {
-    setScreen("suggestions");
-  };
+  const openSuggestions = () => setScreen("suggestions");
 
   const playBark = useCallback(() => {
     if (!soundOn) return;
@@ -206,7 +251,7 @@ export default function App() {
       playBark();
       setBarkCount((c) => {
         const next = c + 1;
-        saveScore(next);
+        barkCountRef.current = next;
         return next;
       });
 
@@ -220,7 +265,13 @@ export default function App() {
       setSealions((prev) =>
         prev.map((sl) =>
           sl.id === id
-            ? { ...sl, bouncing: true, bounceScale: 1.3, vx: randomBetween(-0.025, 0.025), vy: randomBetween(-0.025, 0.025) }
+            ? {
+                ...sl,
+                bouncing: true,
+                bounceScale: 1.3,
+                vx: randomBetween(-0.025, 0.025) || 0.01,
+                vy: randomBetween(-0.025, 0.025) || 0.01,
+              }
             : sl
         )
       );
@@ -230,7 +281,7 @@ export default function App() {
         );
       }, 350);
     },
-    [playBark, saveScore]
+    [playBark]
   );
 
   // Animation loop
@@ -260,29 +311,23 @@ export default function App() {
     return () => cancelAnimationFrame(animRef.current);
   }, [screen]);
 
-  // ── Render ──────────────────────────────────────────────────────────────────
-
   return (
     <>
       <style>{globalStyles}</style>
 
-      {/* Entry */}
       {screen === "entry" && <EntryScreen onEnter={enterGame} />}
 
-      {/* Leaderboard */}
       {screen === "leaderboard" && (
         <Leaderboard scores={scores} onClose={() => setScreen("game")} />
       )}
 
-      {/* Suggestions */}
       {screen === "suggestions" && (
         <SuggestionBoard username={username} onClose={() => setScreen("game")} />
       )}
 
-      {/* Game */}
-      {(screen === "game" || screen === "leaderboard" || screen === "suggestions") && (
+      {/* Game canvas — always mounted once game starts so animation keeps running */}
+      {screen !== "entry" && (
         <div style={styles.game}>
-          {/* Stars */}
           {stars.current.map((s) => (
             <div
               key={s.id}
@@ -298,40 +343,39 @@ export default function App() {
             />
           ))}
 
-          {/* Sea lions */}
-          {screen === "game" && sealions.map((sl) => (
-            <img
-              key={sl.id}
-              className="sealion"
-              src={`sealion${sl.imageIndex}.png`}
-              alt="sea lion"
-              draggable={false}
-              onClick={(e) => handleClick(sl.id, e)}
-              style={{
-                left: `${sl.x}%`,
-                top: `${sl.y}%`,
-                width: sl.size,
-                height: sl.size,
-                transform: `translate(-50%, -50%) rotate(${sl.rotation}deg) scale(${sl.bounceScale})`,
-                transition: sl.bouncing
-                  ? "transform 0.15s cubic-bezier(0.34,1.56,0.64,1)"
-                  : "transform 0.05s linear",
-              }}
-            />
-          ))}
+          {screen === "game" &&
+            sealions.map((sl) => (
+              <img
+                key={sl.id}
+                className="sealion"
+                src={`sealion${sl.imageIndex}.png`}
+                alt="sea lion"
+                draggable={false}
+                onClick={(e) => handleClick(sl.id, e)}
+                style={{
+                  left: `${sl.x}%`,
+                  top: `${sl.y}%`,
+                  width: sl.size,
+                  height: sl.size,
+                  transform: `translate(-50%, -50%) rotate(${sl.rotation}deg) scale(${sl.bounceScale})`,
+                  transition: sl.bouncing
+                    ? "transform 0.15s cubic-bezier(0.34,1.56,0.64,1)"
+                    : "transform 0.05s linear",
+                }}
+              />
+            ))}
 
-          {/* Ripples */}
           {ripples.map((rp) => (
             <div key={rp.id} className="ripple" style={{ left: rp.x, top: rp.y }} />
           ))}
 
-          {/* HUD */}
           <div style={styles.hud}>
             <span style={styles.hudName}>{username}</span>
-            <span style={styles.hudScore}>{barkCount} {barkCount === 1 ? "bark" : "barks"}</span>
+            <span style={styles.hudScore}>
+              {barkCount} {barkCount === 1 ? "bark" : "barks"}
+            </span>
           </div>
 
-          {/* Controls */}
           <div style={styles.controls}>
             <button style={styles.controlBtn} onClick={() => setSoundOn((s) => !s)}>
               {soundOn ? "sound on" : "sound off"}
